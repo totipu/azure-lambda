@@ -2,13 +2,15 @@ import os
 import random
 import asyncio
 from azure.iot.device.aio import IoTHubDeviceClient
-import pymssql
+# import pymssql
+import psycopg2 # Use psycopg2 for PostgreSQL instead of pymssql
+from dotenv import load_dotenv
 
 def get_car_plate():
 
-    town_list = ["BG", "NS", "SU", "ĆA", "ŠI", "NI", "KG"]
+    town_list = ["M", "B", "F", "D", "A", "H", "K"]
     letters = "ABCDEFGHIJKLMNOPQRSTUVZ"
-    plate = random.choice(town_list) + "-" + str(random.randint(100, 999)) + "-" + ''.join(random.choice(letters) for i in range(2))
+    plate = random.choice(town_list) + "-" + ''.join(random.choice(letters) for i in range(2)) + "-"  + str(random.randint(100, 9999)) 
 
     return plate
 
@@ -25,32 +27,41 @@ def get_current_fuel_consumption():
     return current_fuel_consumption
 
 async def main():
+
+    # Load environment variables from .env file
+    load_dotenv()
+
     # Fetch the database connection string from an environment variable
     dbhost = os.getenv("DBHOST")
     dbuser = os.getenv("DBUSER")
     dbpassword = os.getenv("DBPASSWORD")
     dbname = os.getenv("DBNAME")
+    dbport = os.getenv("DBPORT")
 
     device_available = False
     device_connection_string = None
     device_name = None
 
-    conn = pymssql.connect(server=dbhost, user=dbuser, password=dbpassword, database=dbname)
+    # conn = pymssql.connect(server=dbhost, user=dbuser, password=dbpassword, database=dbname)
+    conn = psycopg2.connect(host=dbhost, port=dbport, user=dbuser, password=dbpassword, dbname=dbname)   
     cursor = conn.cursor() 
-    cursor.execute("SELECT TOP 1 ConnectionString, DeviceName FROM Devices WHERE InUse = 0")
+    cursor.execute("SELECT connectionstring, name FROM devices WHERE InUse = FALSE LIMIT 1")
     row = cursor.fetchone()
     if row:
         device_available = True
         device_connection_string = row[0]
         device_name = row[1]
         cursor = conn.cursor()
-        cursor.execute("UPDATE Devices SET InUse = 1 WHERE DeviceName = '" + device_name + "'")
+        cursor.execute("UPDATE Devices SET InUse = TRUE WHERE Name = '" + device_name + "'")
         conn.commit()
         conn.close()
     else:
         print ("No devices available")
 
     if device_available:
+
+        print("Device available: " + device_name)
+        print("Device connection string: " + device_connection_string)
 
         # choose the car plate
         car_plate = get_car_plate()
@@ -76,6 +87,7 @@ async def main():
 
             # Send a single message
             print("Sending message...")
+            print(message)
             await device_client.send_message(message)
             print("Message successfully sent!")
 
